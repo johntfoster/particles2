@@ -47,7 +47,7 @@ class particle_realization():
 
         self.__search_for_contact_neighbors()
 
-        self.initialize_velocities(-self.particle_diameter, self.particle_diameter)
+        self.initialize_velocities(-self.particle_diameter, self.particle_diameter, 100.0)
         
 
     def __compute_total_area(self):
@@ -92,20 +92,18 @@ class particle_realization():
         grid_pairs = np.array([self.x, self.y]).T
          
         self.tree = scipy.spatial.cKDTree(grid_pairs)
+        #neighbors_temp = self.tree.query_ball_point(grid_pairs, 5.0 * self.particle_diameter)
+        _, neighbors = self.tree.query(grid_pairs, k=100, p=2, distance_upper_bound=5.0*self.particle_diameter)
 
-        neighbors_temp = self.tree.query_ball_point(grid_pairs, 5.0 * self.particle_diameter)
+        neighbors = np.delete(np.where(neighbors ==  self.tree.n, -1, neighbors),0,1)
+        distances = np.delete(distances,0,1)
+        #Find the maximum length of any family, we will use this to recreate 
+        #the families array such that it minimizes masked entries.
+        self.neighbor_length_list = np.array((neighbors != -1).sum(axis=1), dtype=np.int)
+        #Recast the families array to be of minimum size possible
+        self.neighbors = ma.masked_equal(neighbors, -1).compressed()
+        print self.neighbors
 
-        length_of_neighbors = np.array([ len(item) for item in neighbors_temp ])
-
-        max_neighbors = np.max(length_of_neighbors)
-
-        self.neighbors = np.ones((len(neighbors_temp), max_neighbors), dtype=np.int) * -1
-
-        for row in range(len(neighbors_temp)):
-            self.neighbors[row,:length_of_neighbors[row]] = neighbors_temp[row]
-
-        self.neighbors = ma.masked_equal(self.neighbors, -1) 
-        self.neighbors.harden_mask()
 
     def __particles_in_contact(self):
 
@@ -115,25 +113,31 @@ class particle_realization():
                 mask=self.neighbors.mask)
 
         distances = np.sqrt(distances_x * distances_x + distances_y * distances_y)
+        print distances
 
-        return (distances <= self.particle_diameter)
+        self.normal_x = distances_x / self.distances
+        self.normal_y = distances_y / self.distances
 
-    def __wall_contact(self):
+        return (self.distances <= self.particle_diameter)
 
-        case1 = (self.width - self.x) < self.particle_radius
-        case2 = self.x < self.particle_radius
-        case3 = (self.height - self.y) < self.particle_radius
-        case4 = (self.y - np.sin(self.x + np.arcsin(1)) - 1) < self.particle_radius
+    def __wall_contact(self,direction='x'):
 
-        return (case1 | case2 | case3 | case4)
+        if direction == 'x':
+            case1 = (self.width - self.x) < self.particle_radius
+            case2 = self.x < self.particle_radius
+        elif direction == 'y':
+            case1 = (self.height - self.y) < self.particle_radius
+            case2 = (self.y - np.sin(self.x + np.arcsin(1)) - 1) < self.particle_radius
+
+        return (case1 | case2)
 
 
-    def initialize_velocities(self,min_velocity, max_velocity):
+    def initialize_velocities(self,min_velocity, max_velocity, scale_factor):
 
-        self.velocity_x = ((max_velocity - min_velocity) * 
-                np.random.random_sample(len(self.x),) + min_velocity)
-        self.velocity_y = ((max_velocity - min_velocity) * 
-                np.random.random_sample(len(self.y),) + min_velocity)
+        self.velocity_x = ((scale_factor * max_velocity - scale_factor * min_velocity) * 
+                np.random.random_sample(len(self.x),) + scale_factor * min_velocity)
+        self.velocity_y = ((scale_factor * max_velocity - scale_factor * min_velocity) * 
+                np.random.random_sample(len(self.y),) + scale_factor * min_velocity)
 
     def advance(self, dt):
 
@@ -142,11 +146,21 @@ class particle_realization():
 
     def transfer_momentum(self):
 
-        self.velocity_x = ma.masked_equal(np.where(self.__particles_in_contact(), self.velocity_x[self.neighbors], -1), -1).sum(axis=1)
-        self.velocity_y = ma.masked_equal(np.where(self.__particles_in_contact(), self.velocity_y[self.neighbors], -1), -1).sum(axis=1)
+        vel_x = self.velocity_x
+        vel_y = self.velocity_y
+        neigh = self.neighbors
 
-        self.velocity_x = np.where(self.__wall_contact(), -self.velocity_x, self.velocity_x)
-        self.velocity_y = np.where(self.__wall_contact(), -self.velocity_y, self.velocity_x)
+        first_contact_index = np.argmax(self.__particles_in_contact(), axis=1)
+        first_contact_neighbors = np.diagonal(neigh[:,first_contact_index])
+
+        norm_x = self.normal_x
+        norm_y = self.normal_y
+
+        self.velocity_x = (vel_x[first_contact_neighbors] * np.diagonal(norm_x[:,first_contact_neighbors])
+                - vel_x * np.diagonal(norm_y[:,first_contact_neighbors]))
+        self.velocity_y = (vel_y[first_contact_neighbors] * np.diagonal(norm_x[:,first_contact_neighbors])
+                - vel_y * np.diagonal(norm_y[:,first_contact_neighbors]))
+
 
 
     def relax_particles(self, total_time):
@@ -157,22 +171,32 @@ class particle_realization():
 
             max_velocity = np.max([np.max(np.abs(self.velocity_x)), np.max(np.abs(self.velocity_y))])
             #dt_max = self.particle_radius / max_velocity / 2.0 / 10.0
-            dt_max = 0.000000001
+            dt_max = 0.00001
             print("dt_max: " + str(dt_max))
 
             self.advance(dt_max)
             self.transfer_momentum()
-
             self.time = self.time + dt_max
             print self.time
+
+    def animate_particle_motion(self):
+
+        plt.ion()
+        data, = plt.plot(real.x, real.y, 'ro')
+        plt.show()
+
+        for time in np.arange(0,0.1,0.001): 
+            real.relax_particles(time)
+            data.set_xdata(self.x)
+            data.set_ydata(self.y)
+            plt.draw()
+
+
+
 
             
 
 
 real = particle_realization(20,10,0.4,target_density=0.6)
-plt.plot(real.x, real.y, 'ro')
-plt.show()
 
-real.relax_particles(0.1)
-plt.plot(real.x, real.y, 'ro')
-plt.show()
+real.relax_particles(0.00002)
