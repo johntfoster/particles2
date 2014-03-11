@@ -161,8 +161,6 @@ class particle_realization():
         #Recast the families array to be of minimum size possible
         self.neighbors = np.array(ma.masked_equal(neighbors, -1).compressed(), dtype=np.int32)
 
-
-
     def __wall_contact(self):
 
         if self.driver_type == 'sine':
@@ -171,21 +169,24 @@ class particle_realization():
             sine_wave_bool = 1
 
         _particles.wall_contact(self.x.ctypes.data_as(ctypes.c_void_p),
-                                self.y.ctypes.data_as(ctypes.c_void_p), 
-                                self.velocity_x.ctypes.data_as(ctypes.c_void_p),
-                                self.velocity_y.ctypes.data_as(ctypes.c_void_p),
+                                self.y.ctypes.data_as(ctypes.c_void_p),
+                                self.velocity_x.ctypes.data_as(
+                                    ctypes.c_void_p),
+                                self.velocity_y.ctypes.data_as(
+                                    ctypes.c_void_p),
                                 len(self.x), self.width, self.height,
                                 sine_wave_bool, self.particle_radius)
 
-        return 
+    def initialize_velocities(self, min_velocity, max_velocity, scale_factor):
 
-
-    def initialize_velocities(self,min_velocity, max_velocity, scale_factor):
-
-        self.velocity_x = ((scale_factor * max_velocity - scale_factor * min_velocity) * 
-                np.random.random_sample(len(self.x),) + scale_factor * min_velocity)
-        self.velocity_y = ((scale_factor * max_velocity - scale_factor * min_velocity) *
-                np.random.random_sample(len(self.y),) + scale_factor * min_velocity)
+        self.velocity_x = ((scale_factor * max_velocity -
+                           scale_factor * min_velocity) *
+                           np.random.random_sample(len(self.x),)
+                           + scale_factor * min_velocity)
+        self.velocity_y = ((scale_factor * max_velocity -
+                           scale_factor * min_velocity) *
+                           np.random.random_sample(len(self.y),)
+                           + scale_factor * min_velocity)
 
     def advance(self, dt):
 
@@ -198,17 +199,16 @@ class particle_realization():
         """
 
         _particles.transfer_momentum(
-                     self.x.ctypes.data_as(ctypes.c_void_p),
-                     self.y.ctypes.data_as(ctypes.c_void_p),
-                     self.velocity_x.ctypes.data_as(ctypes.c_void_p),
-                     self.velocity_y.ctypes.data_as(ctypes.c_void_p),
-                     len(self.x),
-                     self.neighbor_length_list.ctypes.data_as(ctypes.c_void_p),
-                     self.neighbors.ctypes.data_as(ctypes.c_void_p),
-                     self.particle_diameter)
+            self.x.ctypes.data_as(ctypes.c_void_p),
+            self.y.ctypes.data_as(ctypes.c_void_p),
+            self.velocity_x.ctypes.data_as(ctypes.c_void_p),
+            self.velocity_y.ctypes.data_as(ctypes.c_void_p),
+            len(self.x),
+            self.neighbor_length_list.ctypes.data_as(ctypes.c_void_p),
+            self.neighbors.ctypes.data_as(ctypes.c_void_p),
+            self.particle_diameter)
 
         self.__wall_contact()
-
 
     def relax_particles(self, total_time):
 
@@ -217,15 +217,16 @@ class particle_realization():
             self.__search_for_contact_neighbors()
 
             self.initialize_velocities(-self.particle_diameter,
-                                        self.particle_diameter, 10.0)
+                                       self.particle_diameter, 1.0)
 
         while self.time < total_time:
 
             print("time: " + str(self.time))
 
-            max_velocity = np.max([np.max(np.abs(self.velocity_x)), np.max(np.abs(self.velocity_y))])
-            #dt_max = self.particle_radius / max_velocity / 2.0 / 10.0
-            dt_max = 0.00001
+            max_velocity = np.max(np.sqrt(self.velocity_x * self.velocity_x +
+                                  self.velocity_y * self.velocity_y))
+            dt_max = self.particle_radius / max_velocity / 2.0
+            #dt_max = 1.e-6
             print("dt_max: " + str(dt_max))
 
             self.advance(dt_max)
@@ -233,26 +234,22 @@ class particle_realization():
             self.time = self.time + dt_max
             print self.time
 
-    def animate_particle_motion(self):
+    def animate_particle_motion(self, total_time=1.0, num_plots=10):
 
         plt.ion()
         data, = plt.plot(self.x, self.y, 'ro')
         plt.show()
 
-        for time in np.arange(0,0.5,0.001): 
+        for time in np.arange(0, total_time, total_time/num_plots):
             real.relax_particles(time)
             data.set_xdata(self.x)
             data.set_ydata(self.y)
             plt.draw()
 
 
-
-
-
-
-
-real = particle_realization(20,10,0.1,target_density=0.6,driver_type='sine')
+real = particle_realization(20, 10, 0.2, target_density=0.6,
+                            driver_type='sine')
 
 #real.print_lammps_datafile()
 #real.plot_lammps_particles()
-real.animate_particle_motion()
+real.animate_particle_motion(total_time=0.001, num_plots=10000)
