@@ -71,6 +71,8 @@ class particle_realization():
         print "Target particle density is: " + str(target_density)
         print "Actual particle density is: " + str(particle_density)
 
+        self.__discretize_single_particle()
+
 
     def __compute_total_area(self):
 
@@ -209,6 +211,25 @@ class particle_realization():
             self.particle_diameter)
 
         self.__wall_contact()
+
+    def __discretize_single_particle(self, nr=10):
+
+        dr = self.particle_radius / nr 
+        ds = dr
+
+        self.particle_nodes = []
+
+        for ir in range(1, nr+1):
+
+            r = (ir - 0.5) * dr
+            perim = 2.0 * np.pi * r
+            nt = np.rnd(perim / ds)
+            dt = 2.0 * np.pi / nt
+
+            for it in range(1, nt+1):
+
+                t = (it - 1.0) * dt
+                self.particle_nodes += [r * np.cos(t), r * np.sin(t)]
 
     def relax_particles(self, total_time):
 
