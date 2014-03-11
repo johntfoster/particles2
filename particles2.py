@@ -1,42 +1,16 @@
 #!/usr/bin/env python
 
 import numpy as np
-import numpy.ma as ma
 import scipy.integrate
-import scipy.spatial
 import matplotlib.pyplot as plt
-import ctypes
 
-
-_particles = np.ctypeslib.load_library('_particles','.')
-_particles.transfer_momentum.restype = None
-_particles.wall_contact.restype = None
-_particles.transfer_momentum.argtypes = [ctypes.c_void_p,
-                                         ctypes.c_void_p,
-                                         ctypes.c_void_p,
-                                         ctypes.c_void_p,
-                                         ctypes.c_int,
-                                         ctypes.c_void_p,
-                                         ctypes.c_void_p,
-                                         ctypes.c_double]
-
-_particles.wall_contact.argtypes = [ctypes.c_void_p,
-                                    ctypes.c_void_p,
-                                    ctypes.c_void_p,
-                                    ctypes.c_void_p,
-                                    ctypes.c_int,
-                                    ctypes.c_double,
-                                    ctypes.c_double,
-                                    ctypes.c_int,
-                                    ctypes.c_double]
-                                      
 
 class particle_realization():
     """
        Class to create a realization of densly packed circular particles (2D)
     """
 
-    def __init__(self, width, height, particle_diameter, target_density=0.6, driver_type='sine'):
+    def __init__(self, width, height, particle_diameter, target_density=0.6, driver_type='sine', number_of_nodes_across_particle_diameter=10):
 
         self.particle_diameter = particle_diameter
         self.particle_radius = particle_diameter / 2.0
@@ -71,7 +45,8 @@ class particle_realization():
         print "Target particle density is: " + str(target_density)
         print "Actual particle density is: " + str(particle_density)
 
-        self.__discretize_single_particle()
+        self.__discretize_single_particle(
+                nr=number_of_nodes_across_particle_diameter)
 
 
     def __compute_total_area(self):
@@ -148,129 +123,68 @@ class particle_realization():
                         str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0\n")
 
 
-    def __search_for_contact_neighbors(self):
-
-        grid_pairs = np.array([self.x, self.y]).T
-         
-        self.tree = scipy.spatial.cKDTree(grid_pairs)
-        #neighbors_temp = self.tree.query_ball_point(grid_pairs, 5.0 * self.particle_diameter)
-        _, neighbors = self.tree.query(grid_pairs, k=100, p=2, distance_upper_bound=5.0*self.particle_diameter)
-
-        neighbors = np.delete(np.where(neighbors ==  self.tree.n, -1, neighbors),0,1)
-        #Find the maximum length of any family, we will use this to recreate 
-        #the families array such that it minimizes masked entries.
-        self.neighbor_length_list = np.array((neighbors != -1).sum(axis=1), dtype=np.int32)
-        #Recast the families array to be of minimum size possible
-        self.neighbors = np.array(ma.masked_equal(neighbors, -1).compressed(), dtype=np.int32)
-
-    def __wall_contact(self):
-
-        if self.driver_type == 'sine':
-            sine_wave_bool = 0
-        else:
-            sine_wave_bool = 1
-
-        _particles.wall_contact(self.x.ctypes.data_as(ctypes.c_void_p),
-                                self.y.ctypes.data_as(ctypes.c_void_p),
-                                self.velocity_x.ctypes.data_as(
-                                    ctypes.c_void_p),
-                                self.velocity_y.ctypes.data_as(
-                                    ctypes.c_void_p),
-                                len(self.x), self.width, self.height,
-                                sine_wave_bool, self.particle_radius)
-
-    def initialize_velocities(self, min_velocity, max_velocity, scale_factor):
-
-        self.velocity_x = ((scale_factor * max_velocity -
-                           scale_factor * min_velocity) *
-                           np.random.random_sample(len(self.x),)
-                           + scale_factor * min_velocity)
-        self.velocity_y = ((scale_factor * max_velocity -
-                           scale_factor * min_velocity) *
-                           np.random.random_sample(len(self.y),)
-                           + scale_factor * min_velocity)
-
-    def advance(self, dt):
-
-        self.x += dt * self.velocity_x
-        self.y += dt * self.velocity_y
-
-    def transfer_momentum(self):
-        """
-           Calls C function to transfer momentum between particle contacts
-        """
-
-        _particles.transfer_momentum(
-            self.x.ctypes.data_as(ctypes.c_void_p),
-            self.y.ctypes.data_as(ctypes.c_void_p),
-            self.velocity_x.ctypes.data_as(ctypes.c_void_p),
-            self.velocity_y.ctypes.data_as(ctypes.c_void_p),
-            len(self.x),
-            self.neighbor_length_list.ctypes.data_as(ctypes.c_void_p),
-            self.neighbors.ctypes.data_as(ctypes.c_void_p),
-            self.particle_diameter)
-
-        self.__wall_contact()
-
     def __discretize_single_particle(self, nr=10):
 
-        dr = self.particle_radius / nr 
+        dr = self.particle_radius / nr
         ds = dr
 
-        self.particle_nodes = []
+        particle_nodes = []
 
         for ir in range(1, nr+1):
 
             r = (ir - 0.5) * dr
             perim = 2.0 * np.pi * r
-            nt = np.rnd(perim / ds)
+            nt = int(np.round(perim / ds))
             dt = 2.0 * np.pi / nt
 
             for it in range(1, nt+1):
 
                 t = (it - 1.0) * dt
-                self.particle_nodes += [r * np.cos(t), r * np.sin(t)]
+                particle_nodes += [[r * np.cos(t), r * np.sin(t)]]
 
-    def relax_particles(self, total_time):
-
-        if self.time == 0.0:
-
-            self.__search_for_contact_neighbors()
-
-            self.initialize_velocities(-self.particle_diameter,
-                                       self.particle_diameter, 1.0)
-
-        while self.time < total_time:
-
-            print("time: " + str(self.time))
-
-            max_velocity = np.max(np.sqrt(self.velocity_x * self.velocity_x +
-                                  self.velocity_y * self.velocity_y))
-            dt_max = self.particle_radius / max_velocity / 2.0
-            #dt_max = 1.e-6
-            print("dt_max: " + str(dt_max))
-
-            self.advance(dt_max)
-            self.transfer_momentum()
-            self.time = self.time + dt_max
-            print self.time
-
-    def animate_particle_motion(self, total_time=1.0, num_plots=10):
-
-        plt.ion()
-        data, = plt.plot(self.x, self.y, 'ro')
-        plt.show()
-
-        for time in np.arange(0, total_time, total_time/num_plots):
-            real.relax_particles(time)
-            data.set_xdata(self.x)
-            data.set_ydata(self.y)
-            plt.draw()
+        self.particle_nodes = np.array(particle_nodes)
+        self.node_volume = (np.pi * self.particle_radius * 
+                self.particle_radius / len(self.particle_nodes))
 
 
-real = particle_realization(20, 10, 0.2, target_density=0.6,
-                            driver_type='sine')
+    def print_peridigm_files(self, basename='peridigm'):
+
+        f = open(basename+"_nodes.txt", 'w')
+        g = open(basename+"_particles_nodeset.txt", 'w')
+        h = open(basename+"_driver_nodeset.txt", 'w')
+
+        node_id = 1
+        for xy_loc in self.driver:
+
+            f.write('#x y z block_id node_volume\n')
+            driver_particle_i = (self.particle_nodes + [xy_loc[0], xy_loc[1]])
+
+            for node in driver_particle_i:
+                f.write(str(node[0]) + " " + str(node[1]) + " 0.0 1 " +
+                        str(self.node_volume) + "\n")
+                h.write(str(node_id) + "\n")
+                node_id += 1
+
+        for idx, particle_center in enumerate(zip(self.x, self.y)):
+
+            particle_i = (self.particle_nodes +
+                          [particle_center[0], particle_center[1]])
+
+            for node in particle_i:
+                f.write(str(node[0]) + " " + str(node[1]) + " 0.0 " +
+                        str(idx+2) + " " + str(self.node_volume) + "\n")
+                g.write(str(node_id) + "\n")
+                node_id += 1
+
+        f.close()
+        g.close()
+        h.close()
+
+
+
+
+real = particle_realization(20, 10, 0.2, target_density=0.6, driver_type='sine')
 
 #real.print_lammps_datafile()
 #real.plot_lammps_particles()
-real.animate_particle_motion(total_time=0.001, num_plots=10000)
+
