@@ -5,7 +5,31 @@ import numpy.ma as ma
 import scipy.integrate
 import scipy.spatial
 import matplotlib.pyplot as plt
+import ctypes
 
+
+_particles = np.ctypeslib.load_library('_particles','.')
+_particles.transfer_momentum.restype = None
+_particles.wall_contact.restype = None
+_particles.transfer_momentum.argtypes = [ctypes.c_void_p,
+                                         ctypes.c_void_p,
+                                         ctypes.c_void_p,
+                                         ctypes.c_void_p,
+                                         ctypes.c_int,
+                                         ctypes.c_void_p,
+                                         ctypes.c_void_p,
+                                         ctypes.c_double]
+
+_particles.wall_contact.argtypes = [ctypes.c_void_p,
+                                    ctypes.c_void_p,
+                                    ctypes.c_void_p,
+                                    ctypes.c_void_p,
+                                    ctypes.c_int,
+                                    ctypes.c_double,
+                                    ctypes.c_double,
+                                    ctypes.c_int,
+                                    ctypes.c_double]
+                                      
 
 class particle_realization():
     """
@@ -18,7 +42,7 @@ class particle_realization():
         self.particle_radius = particle_diameter / 2.0
 
         self.width = width
-        self.height = height 
+        self.height = height
         self.target_density = target_density
         self.driver_type = driver_type
         self.time = 0.0
@@ -38,17 +62,15 @@ class particle_realization():
         self.x = self.grid[0].ravel()
         self.y = self.grid[1].ravel()
 
-        self.__remove_particles_randomly()
+        if driver_type == 'sine':
+
+            self.__remove_particles_randomly()
 
         particle_density = self.__compute_particle_density()
 
-        print("Target particle density is: " + str(target_density))
-        print("Actual particle density is: " + str(particle_density))
+        print "Target particle density is: " + str(target_density)
+        print "Actual particle density is: " + str(particle_density)
 
-        self.__search_for_contact_neighbors()
-
-        self.initialize_velocities(-self.particle_diameter, self.particle_diameter, 100.0)
-        
 
     def __compute_total_area(self):
 
@@ -56,14 +78,15 @@ class particle_realization():
 
         if self.driver_type == 'sine':
             driver_area, _ = scipy.integrate.quad(lambda x: np.sin(x + np.arcsin(1.0))
-                    - 1.0, 0.0, self.height)
+                    + 1.0 + self.particle_diameter, 0.0, self.width)
             return full_area - driver_area
         else:
             return full_area
 
     def __compute_particle_area(self):
 
-        return (np.pi * self.particle_diameter / 4.0) * len(self.x)
+        return (np.pi * self.particle_diameter * 
+                self.particle_diameter / 4.0) * len(self.x)
 
     def __compute_particle_density(self):
 
@@ -75,16 +98,52 @@ class particle_realization():
                 len(self.x) * self.target_density / 
                 self.__compute_particle_density())
 
+
     def __remove_particles_randomly(self):
+        
+        grid_pairs = np.array([self.grid[0].ravel(), self.grid[1].ravel()]).T
+
+        particles = grid_pairs[grid_pairs[:,1] > (np.sin(grid_pairs[:,0] + np.arcsin(1.0)) + 1.0 + self.particle_diameter)]
+        self.driver = grid_pairs[grid_pairs[:,1] <= (np.sin(grid_pairs[:,0] + np.arcsin(1.0)) + 1.0 + self.particle_diameter)]
+
+        self.x = particles[:,0]
 
         number_of_particles_to_remove = self.__compute_number_of_particles_to_remove()
 
-        grid_pairs = np.array([self.grid[0].ravel(), self.grid[1].ravel()]).T
+        np.random.shuffle(particles)
 
-        np.random.shuffle(grid_pairs)
+        self.x = particles[:-number_of_particles_to_remove,0]
+        self.y = particles[:-number_of_particles_to_remove,1]
 
-        self.x = grid_pairs[:-number_of_particles_to_remove,0]
-        self.y = grid_pairs[:-number_of_particles_to_remove,1]
+    def plot_lammps_particles(self):
+
+        x_driver = self.driver[:,0]
+        y_driver = self.driver[:,1]
+
+        plt.plot(self.x, self.y, 'bo', x_driver, y_driver, 'ro')
+        plt.show()
+
+    def print_lammps_datafile(self,filename='particles.txt'):
+
+        with open(filename, 'w') as f:
+
+            num_atoms = len(self.x) + len(self.driver)
+            f.write("#Lammps data file\n\n")
+            f.write(str(num_atoms) + " atoms\n\n")
+            f.write("2 atom types\n\n")
+            f.write("0.0 " + str(self.width) + " xlo xhi\n" )
+            f.write("0.0 " + str(self.height) + " ylo yhi\n" )
+            f.write("0.0 0.0 zlo zhi\n\n" )
+            f.write("Atoms\n\n")
+
+            for idx, xy_loc in enumerate(self.driver):
+                f.write(str(idx+1) + " 1 " + str(self.particle_diameter) +
+                        " 1.0 " + str(xy_loc[0]) + " " + str(xy_loc[1]) +
+                        " 0.0\n")
+            for idx, xy_loc in enumerate(zip(self.x,self.y)):
+                f.write(str(idx+len(self.driver)+1) + " 2 " +
+                        str(self.particle_diameter) + " 1.0 " +
+                        str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0\n")
 
 
     def __search_for_contact_neighbors(self):
@@ -96,47 +155,36 @@ class particle_realization():
         _, neighbors = self.tree.query(grid_pairs, k=100, p=2, distance_upper_bound=5.0*self.particle_diameter)
 
         neighbors = np.delete(np.where(neighbors ==  self.tree.n, -1, neighbors),0,1)
-        distances = np.delete(distances,0,1)
         #Find the maximum length of any family, we will use this to recreate 
         #the families array such that it minimizes masked entries.
-        self.neighbor_length_list = np.array((neighbors != -1).sum(axis=1), dtype=np.int)
+        self.neighbor_length_list = np.array((neighbors != -1).sum(axis=1), dtype=np.int32)
         #Recast the families array to be of minimum size possible
-        self.neighbors = ma.masked_equal(neighbors, -1).compressed()
-        print self.neighbors
+        self.neighbors = np.array(ma.masked_equal(neighbors, -1).compressed(), dtype=np.int32)
 
 
-    def __particles_in_contact(self):
 
-        distances_x = ma.masked_array(self.x[self.neighbors] - self.x[:,None], 
-                mask=self.neighbors.mask)
-        distances_y = ma.masked_array(self.y[self.neighbors] - self.y[:,None], 
-                mask=self.neighbors.mask)
+    def __wall_contact(self):
 
-        distances = np.sqrt(distances_x * distances_x + distances_y * distances_y)
-        print distances
+        if self.driver_type == 'sine':
+            sine_wave_bool = 0
+        else:
+            sine_wave_bool = 1
 
-        self.normal_x = distances_x / self.distances
-        self.normal_y = distances_y / self.distances
+        _particles.wall_contact(self.x.ctypes.data_as(ctypes.c_void_p),
+                                self.y.ctypes.data_as(ctypes.c_void_p), 
+                                self.velocity_x.ctypes.data_as(ctypes.c_void_p),
+                                self.velocity_y.ctypes.data_as(ctypes.c_void_p),
+                                len(self.x), self.width, self.height,
+                                sine_wave_bool, self.particle_radius)
 
-        return (self.distances <= self.particle_diameter)
-
-    def __wall_contact(self,direction='x'):
-
-        if direction == 'x':
-            case1 = (self.width - self.x) < self.particle_radius
-            case2 = self.x < self.particle_radius
-        elif direction == 'y':
-            case1 = (self.height - self.y) < self.particle_radius
-            case2 = (self.y - np.sin(self.x + np.arcsin(1)) - 1) < self.particle_radius
-
-        return (case1 | case2)
+        return 
 
 
     def initialize_velocities(self,min_velocity, max_velocity, scale_factor):
 
         self.velocity_x = ((scale_factor * max_velocity - scale_factor * min_velocity) * 
                 np.random.random_sample(len(self.x),) + scale_factor * min_velocity)
-        self.velocity_y = ((scale_factor * max_velocity - scale_factor * min_velocity) * 
+        self.velocity_y = ((scale_factor * max_velocity - scale_factor * min_velocity) *
                 np.random.random_sample(len(self.y),) + scale_factor * min_velocity)
 
     def advance(self, dt):
@@ -145,25 +193,31 @@ class particle_realization():
         self.y += dt * self.velocity_y
 
     def transfer_momentum(self):
+        """
+           Calls C function to transfer momentum between particle contacts
+        """
 
-        vel_x = self.velocity_x
-        vel_y = self.velocity_y
-        neigh = self.neighbors
+        _particles.transfer_momentum(
+                     self.x.ctypes.data_as(ctypes.c_void_p),
+                     self.y.ctypes.data_as(ctypes.c_void_p),
+                     self.velocity_x.ctypes.data_as(ctypes.c_void_p),
+                     self.velocity_y.ctypes.data_as(ctypes.c_void_p),
+                     len(self.x),
+                     self.neighbor_length_list.ctypes.data_as(ctypes.c_void_p),
+                     self.neighbors.ctypes.data_as(ctypes.c_void_p),
+                     self.particle_diameter)
 
-        first_contact_index = np.argmax(self.__particles_in_contact(), axis=1)
-        first_contact_neighbors = np.diagonal(neigh[:,first_contact_index])
-
-        norm_x = self.normal_x
-        norm_y = self.normal_y
-
-        self.velocity_x = (vel_x[first_contact_neighbors] * np.diagonal(norm_x[:,first_contact_neighbors])
-                - vel_x * np.diagonal(norm_y[:,first_contact_neighbors]))
-        self.velocity_y = (vel_y[first_contact_neighbors] * np.diagonal(norm_x[:,first_contact_neighbors])
-                - vel_y * np.diagonal(norm_y[:,first_contact_neighbors]))
-
+        self.__wall_contact()
 
 
     def relax_particles(self, total_time):
+
+        if self.time == 0.0:
+
+            self.__search_for_contact_neighbors()
+
+            self.initialize_velocities(-self.particle_diameter,
+                                        self.particle_diameter, 10.0)
 
         while self.time < total_time:
 
@@ -182,10 +236,10 @@ class particle_realization():
     def animate_particle_motion(self):
 
         plt.ion()
-        data, = plt.plot(real.x, real.y, 'ro')
+        data, = plt.plot(self.x, self.y, 'ro')
         plt.show()
 
-        for time in np.arange(0,0.1,0.001): 
+        for time in np.arange(0,0.5,0.001): 
             real.relax_particles(time)
             data.set_xdata(self.x)
             data.set_ydata(self.y)
@@ -194,9 +248,11 @@ class particle_realization():
 
 
 
-            
 
 
-real = particle_realization(20,10,0.4,target_density=0.6)
 
-real.relax_particles(0.00002)
+real = particle_realization(20,10,0.1,target_density=0.6,driver_type='sine')
+
+#real.print_lammps_datafile()
+#real.plot_lammps_particles()
+real.animate_particle_motion()
