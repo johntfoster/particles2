@@ -10,10 +10,12 @@ class particle_realization():
        Class to create a realization of densly packed circular particles (2D)
     """
 
-    def __init__(self, width, height, particle_diameter, target_density=0.6, driver_type='sine', number_of_nodes_across_particle_diameter=10):
+    def __init__(self, width, height, particle_diameter, target_density=0.6, driver_type='sine', number_of_peridigm_nodes_across_particle_diameter=10):
 
         self.particle_diameter = particle_diameter
         self.particle_radius = particle_diameter / 2.0
+
+        self.number_of_peridigm_nodes_across_particle_diameter = number_of_peridigm_nodes_across_particle_diameter
 
         self.width = width
         self.height = height
@@ -45,9 +47,7 @@ class particle_realization():
         print "Target particle density is: " + str(target_density)
         print "Actual particle density is: " + str(particle_density)
 
-        self.__discretize_single_particle(
-                nr=number_of_nodes_across_particle_diameter)
-
+        self.__discretize_single_particle() 
 
     def __compute_total_area(self):
 
@@ -123,9 +123,10 @@ class particle_realization():
                         str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0\n")
 
 
-    def __discretize_single_particle(self, nr=10):
+    def __discretize_single_particle(self):
 
-        dr = self.particle_radius / nr
+        nr = self.number_of_peridigm_nodes_across_particle_diameter
+        dr = self.particle_diameter/ nr
         ds = dr
 
         particle_nodes = []
@@ -143,21 +144,52 @@ class particle_realization():
                 particle_nodes += [[r * np.cos(t), r * np.sin(t)]]
 
         self.particle_nodes = np.array(particle_nodes)
-        self.node_volume = (np.pi * self.particle_radius * 
-                self.particle_radius / len(self.particle_nodes))
+        self.node_volume = (np.pi * self.particle_radius *
+                            self.particle_radius /
+                            len(self.particle_nodes))
 
+    def create_peridigm_driver(self):
+
+        dr = (self.particle_diameter/
+              self.number_of_peridigm_nodes_across_particle_diameter)
+
+        x = np.arange(0.0, self.width, dr)
+        y = np.sin(x + np.arcsin(1.0)) + 1.0 + self.particle_diameter - dr
+
+        xd = np.diff(x)
+        yd = np.diff(y)
+        dist = np.sqrt(xd * xd + yd * yd)
+        u = np.cumsum(dist)
+        u = np.hstack([[0], u])
+
+        t = np.arange(0., u.max(), dr)
+        x_temp = np.interp(t, u, x)
+        y_temp = np.interp(t, u, y)
+
+        self.x_driver = np.array([x_temp for i in range(5)]).flatten()
+        self.y_driver = np.array([y_temp - i * dr
+                                 for i in range(5)]).flatten()
+
+    def plot_peridigm_nodes(self):
+
+        self.create_peridigm_driver()
+
+        plt.plot(self.x_driver, self.y_driver, 'ro', self.x, self.y, 'bo', markersize=2)
+        plt.show()
 
     def print_peridigm_files(self, basename='peridigm'):
+
+        self.create_peridigm_driver()
 
         f = open(basename+"_nodes.txt", 'w')
         g = open(basename+"_particles_nodeset.txt", 'w')
         h = open(basename+"_driver_nodeset.txt", 'w')
 
         node_id = 1
-        for xy_loc in self.driver:
+        for xy_loc in zip(self.x_driver, self.y_driver):
 
             f.write('#x y z block_id node_volume\n')
-            driver_particle_i = (self.particle_nodes + [xy_loc[0], xy_loc[1]])
+            driver_particle_i = ([xy_loc[0], xy_loc[1]])
 
             for node in driver_particle_i:
                 f.write(str(node[0]) + " " + str(node[1]) + " 0.0 1 " +
@@ -181,10 +213,9 @@ class particle_realization():
         h.close()
 
 
-
-
-real = particle_realization(20, 10, 0.2, target_density=0.6, driver_type='sine')
+real = particle_realization(20, 10, 0.2, target_density=0.6,
+                            driver_type='sine')
+real.plot_peridigm_nodes()
 
 #real.print_lammps_datafile()
 #real.plot_lammps_particles()
-
