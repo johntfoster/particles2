@@ -49,6 +49,8 @@ class particle_realization():
 
         self.__discretize_single_particle() 
 
+        self.create_peridigm_driver()
+
     def __compute_total_area(self):
 
         full_area = self.width * self.height
@@ -174,12 +176,11 @@ class particle_realization():
 
         self.create_peridigm_driver()
 
-        plt.plot(self.x_driver, self.y_driver, 'ro', self.x, self.y, 'bo', markersize=2)
+        plt.plot(self.x_driver, self.y_driver, 'ro', self.x, self.y, 'bo')
         plt.show()
 
     def print_peridigm_files(self, basename='peridigm'):
 
-        self.create_peridigm_driver()
 
         f = open(basename+"_nodes.txt", 'w')
         g = open(basename+"_particles_nodeset.txt", 'w')
@@ -189,13 +190,10 @@ class particle_realization():
         for xy_loc in zip(self.x_driver, self.y_driver):
 
             f.write('#x y z block_id node_volume\n')
-            driver_particle_i = ([xy_loc[0], xy_loc[1]])
-
-            for node in driver_particle_i:
-                f.write(str(node[0]) + " " + str(node[1]) + " 0.0 1 " +
+            f.write(str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0 1 " +
                         str(self.node_volume) + "\n")
-                h.write(str(node_id) + "\n")
-                node_id += 1
+            h.write(str(node_id) + "\n")
+            node_id += 1
 
         for idx, particle_center in enumerate(zip(self.x, self.y)):
 
@@ -215,6 +213,7 @@ class particle_realization():
 
 real = particle_realization(20, 10, 0.2, target_density=0.6,
                             driver_type='sine')
+real.print_peridigm_files()
 real.plot_peridigm_nodes()
 
 #real.print_lammps_datafile()
