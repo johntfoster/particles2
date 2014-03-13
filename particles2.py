@@ -152,7 +152,12 @@ class particle_realization():
 
     def create_peridigm_driver(self):
 
-        dr = (self.particle_diameter/
+        #Following:
+        #[http://stackoverflow.com/questions/19117660/how-to-generate-
+        #equispaced-interpolating-values]
+        #to get evenly spaced points along the curve
+
+        dr = (self.particle_diameter /
               self.number_of_peridigm_nodes_across_particle_diameter)
 
         x = np.arange(0.0, self.width, dr)
