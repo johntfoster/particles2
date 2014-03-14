@@ -11,8 +11,12 @@ class particle_realization():
     """
 
     def __init__(self, width, height, particle_diameter, target_density=0.6,
-                 driver_type='sine',
+                 driver_type='sine', sine_amp=1.0, sine_freq=1.0,
                  number_of_peridigm_nodes_across_particle_diameter=10):
+
+        if height < sine_amp:
+            print "There are no particles above the driver, please adjust the \
+                   particle height or the sine wave amplitude"
 
         self.particle_diameter = particle_diameter
         self.particle_radius = particle_diameter / 2.0
@@ -25,6 +29,8 @@ class particle_realization():
         self.target_density = target_density
         self.driver_type = driver_type
         self.time = 0.0
+        self.sin_amp = sine_amp
+        self.sin_freq = sine_freq
 
         if target_density > 0.91:
             print "Warning, the theoretical maximum packing density \
@@ -63,8 +69,8 @@ class particle_realization():
 
         if self.driver_type == 'sine':
             driver_area, _ = scipy.integrate.quad(lambda x:
-                                                  np.sin(x + np.arcsin(1.0))
-                                                  + 1.0, 0.0, self.width)
+                                                  self.sin_amp * np.sin(self.sin_freq * x + np.arcsin(1.0))
+                                                  + self.sin_amp, 0.0, self.width)
             return full_area - driver_area
         else:
             return full_area
@@ -89,8 +95,8 @@ class particle_realization():
         
         grid_pairs = np.array([self.grid[0].ravel(), self.grid[1].ravel()]).T
 
-        particles = grid_pairs[grid_pairs[:,1] > (np.sin(grid_pairs[:,0] + np.arcsin(1.0)) + 1.0 + self.particle_diameter)]
-        self.driver = grid_pairs[grid_pairs[:,1] <= (np.sin(grid_pairs[:,0] + np.arcsin(1.0)) + 1.0 + self.particle_diameter)]
+        particles = grid_pairs[grid_pairs[:,1] > (self.sin_amp * np.sin(self.sin_freq * grid_pairs[:,0] + np.arcsin(1.0)) + self.sin_amp + self.particle_diameter)]
+        self.driver = grid_pairs[grid_pairs[:,1] <= (self.sin_amp * np.sin(self.sin_freq * grid_pairs[:,0] + np.arcsin(1.0)) + self.sin_amp + self.particle_diameter)]
 
         self.x = particles[:,0]
 
@@ -168,7 +174,8 @@ class particle_realization():
               self.number_of_peridigm_nodes_across_particle_diameter)
 
         x = np.arange(0.0, self.width, dr)
-        y = np.sin(x + np.arcsin(1.0)) + 1.0 
+        y = self.sin_amp * np.sin(self.sin_freq * x +
+                                  np.arcsin(1.0)) + self.sin_amp
 
         xd = np.diff(x)
         yd = np.diff(y)
@@ -222,8 +229,8 @@ class particle_realization():
         h.close()
 
 
-real = particle_realization(5, 5, 0.2, target_density=0.6,
-                            driver_type='sine')
+real = particle_realization(0.5, 1., 0.02, target_density=0.6, sine_amp=0.5,
+                            sine_freq=10.0)
 real.print_peridigm_files()
 real.plot_peridigm_nodes()
 
