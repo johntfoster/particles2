@@ -10,12 +10,15 @@ class particle_realization():
        Class to create a realization of densly packed circular particles (2D)
     """
 
-    def __init__(self, width, height, particle_diameter, target_density=0.6, driver_type='sine', number_of_peridigm_nodes_across_particle_diameter=10):
+    def __init__(self, width, height, particle_diameter, target_density=0.6,
+                 driver_type='sine',
+                 number_of_peridigm_nodes_across_particle_diameter=10):
 
         self.particle_diameter = particle_diameter
         self.particle_radius = particle_diameter / 2.0
 
-        self.number_of_peridigm_nodes_across_particle_diameter = number_of_peridigm_nodes_across_particle_diameter
+        self.number_of_peridigm_nodes_across_particle_diameter = \
+            number_of_peridigm_nodes_across_particle_diameter
 
         self.width = width
         self.height = height
@@ -24,11 +27,14 @@ class particle_realization():
         self.time = 0.0
 
         if target_density > 0.91:
-            print "Warning, the theoretical maximum packing density in 2D is 91%"
+            print "Warning, the theoretical maximum packing density \
+                   in 2D is 91%"
 
         #Create arrays for the x and y positions of the points
         self.grid = np.mgrid[self.particle_radius:width:particle_diameter,
-                        self.particle_radius:(height-self.particle_radius):particle_diameter]
+                             self.particle_radius:(height -
+                                                   self.particle_diameter):
+                             particle_diameter]
 
         #Shift every other row over to create hexagonal packing
         for idx, item in enumerate(self.grid[1]):
@@ -47,7 +53,7 @@ class particle_realization():
         print "Target particle density is: " + str(target_density)
         print "Actual particle density is: " + str(particle_density)
 
-        self.__discretize_single_particle() 
+        self.__discretize_single_particle()
 
         self.create_peridigm_driver()
 
@@ -56,15 +62,16 @@ class particle_realization():
         full_area = self.width * self.height
 
         if self.driver_type == 'sine':
-            driver_area, _ = scipy.integrate.quad(lambda x: np.sin(x + np.arcsin(1.0))
-                    + 1.0 + self.particle_diameter, 0.0, self.width)
+            driver_area, _ = scipy.integrate.quad(lambda x:
+                                                  np.sin(x + np.arcsin(1.0))
+                                                  + 1.0, 0.0, self.width)
             return full_area - driver_area
         else:
             return full_area
 
     def __compute_particle_area(self):
 
-        return (np.pi * self.particle_diameter * 
+        return (np.pi * self.particle_diameter *
                 self.particle_diameter / 4.0) * len(self.x)
 
     def __compute_particle_density(self):
@@ -128,7 +135,7 @@ class particle_realization():
     def __discretize_single_particle(self):
 
         nr = self.number_of_peridigm_nodes_across_particle_diameter
-        dr = self.particle_diameter/ nr
+        dr = self.particle_diameter/ nr / 2.0
         ds = dr
 
         particle_nodes = []
@@ -161,7 +168,7 @@ class particle_realization():
               self.number_of_peridigm_nodes_across_particle_diameter)
 
         x = np.arange(0.0, self.width, dr)
-        y = np.sin(x + np.arcsin(1.0)) + 1.0 + self.particle_diameter - dr
+        y = np.sin(x + np.arcsin(1.0)) + 1.0 
 
         xd = np.diff(x)
         yd = np.diff(y)
@@ -186,7 +193,6 @@ class particle_realization():
 
     def print_peridigm_files(self, basename='peridigm'):
 
-
         f = open(basename+"_nodes.txt", 'w')
         g = open(basename+"_particles_nodeset.txt", 'w')
         h = open(basename+"_driver_nodeset.txt", 'w')
@@ -196,7 +202,7 @@ class particle_realization():
 
             f.write('#x y z block_id node_volume\n')
             f.write(str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0 1 " +
-                        str(self.node_volume) + "\n")
+                    str(self.node_volume) + "\n")
             h.write(str(node_id) + "\n")
             node_id += 1
 
@@ -216,7 +222,7 @@ class particle_realization():
         h.close()
 
 
-real = particle_realization(20, 10, 0.2, target_density=0.6,
+real = particle_realization(5, 5, 0.2, target_density=0.6,
                             driver_type='sine')
 real.print_peridigm_files()
 real.plot_peridigm_nodes()
