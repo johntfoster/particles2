@@ -12,7 +12,7 @@ class particle_realization():
 
     def __init__(self, width, height, particle_diameter, target_density=0.6,
                  driver_type='sine', sine_amp=1.0, sine_freq=1.0,
-                 number_of_peridigm_nodes_across_particle_diameter=10):
+                 number_of_peridigm_nodes_across_particle_diameter=5):
 
         if height < sine_amp:
             print "There are no particles above the driver, please adjust the \
@@ -62,6 +62,7 @@ class particle_realization():
         self.__discretize_single_particle()
 
         self.create_peridigm_driver()
+        self.create_peridigm_walls()
 
     def __compute_total_area(self):
 
@@ -171,7 +172,7 @@ class particle_realization():
         #to get evenly spaced points along the curve
 
         dr = (self.particle_diameter /
-              self.number_of_peridigm_nodes_across_particle_diameter)
+              self.number_of_peridigm_nodes_across_particle_diameter / 2.0 )
 
         x = np.arange(0.0, self.width, dr)
         y = self.sin_amp * np.sin(self.sin_freq * x +
@@ -191,11 +192,37 @@ class particle_realization():
         self.y_driver = np.array([y_temp - i * dr
                                  for i in range(5)]).flatten()
 
+    def create_peridigm_walls(self):
+
+        dr = (self.particle_diameter /
+              self.number_of_peridigm_nodes_across_particle_diameter / 2.0)
+
+        single_wall_grid = np.mgrid[0.0:5*dr:dr,
+                                    0.0:(self.height):dr]
+
+        wall_start_left_y = (self.sin_amp * np.sin(self.sin_freq * -dr/2.0 +
+                             np.arcsin(1.0)) + self.sin_amp)
+
+        wall_start_right_y = (self.sin_amp * np.sin(self.sin_freq *
+                              -self.width + dr/2.0 +
+                              np.arcsin(1.0)) + self.sin_amp)
+
+        x_walls = np.array([single_wall_grid[0].ravel() - 5*dr - dr/2.0,
+                            single_wall_grid[0].ravel() +
+                            self.width + dr/2.0]).flatten()
+
+        y_walls = np.array([single_wall_grid[1].ravel() + wall_start_left_y,
+                            single_wall_grid[1].ravel() +
+                            wall_start_right_y]).flatten()
+
+        self.y_walls = y_walls[y_walls < self.height]
+        self.x_walls = x_walls[y_walls < self.height]
+
     def plot_peridigm_nodes(self):
 
-        self.create_peridigm_driver()
 
-        plt.plot(self.x_driver, self.y_driver, 'ro', self.x, self.y, 'bo')
+        plt.plot(self.x_driver, self.y_driver, 'ro', self.x, self.y, 'bo', 
+                 self.x_walls, self.y_walls, 'go')
         plt.show()
 
     def print_peridigm_files(self, basename='peridigm'):
@@ -203,14 +230,22 @@ class particle_realization():
         f = open(basename+"_nodes.txt", 'w')
         g = open(basename+"_particles_nodeset.txt", 'w')
         h = open(basename+"_driver_nodeset.txt", 'w')
+        i = open(basename+"_walls_nodeset.txt", 'w')
 
         node_id = 1
+        f.write('#x y z block_id node_volume\n')
         for xy_loc in zip(self.x_driver, self.y_driver):
 
-            f.write('#x y z block_id node_volume\n')
             f.write(str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0 1 " +
                     str(self.node_volume) + "\n")
             h.write(str(node_id) + "\n")
+            node_id += 1
+
+        for xy_loc in zip(self.x_walls, self.y_walls):
+
+            f.write(str(xy_loc[0]) + " " + str(xy_loc[1]) + " 0.0 2 " +
+                    str(self.node_volume) + "\n")
+            i.write(str(node_id) + "\n")
             node_id += 1
 
         for idx, particle_center in enumerate(zip(self.x, self.y)):
@@ -220,17 +255,18 @@ class particle_realization():
 
             for node in particle_i:
                 f.write(str(node[0]) + " " + str(node[1]) + " 0.0 " +
-                        str(idx+2) + " " + str(self.node_volume) + "\n")
+                        str(idx+3) + " " + str(self.node_volume) + "\n")
                 g.write(str(node_id) + "\n")
                 node_id += 1
 
         f.close()
         g.close()
         h.close()
+        i.close()
 
 
-real = particle_realization(0.5, 1., 0.02, target_density=0.6, sine_amp=0.5,
-                            sine_freq=10.0)
+real = particle_realization(1.0, 1.5, 0.02, target_density=0.6, sine_amp=0.25,
+                            sine_freq=3.1415,number_of_peridigm_nodes_across_particle_diameter=4)
 real.print_peridigm_files()
 real.plot_peridigm_nodes()
 
