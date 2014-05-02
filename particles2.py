@@ -209,9 +209,9 @@ class particle_realization():
                               -self.width + dr/2.0 +
                               np.arcsin(1.0)) + self.sin_amp)
 
-        x_walls = np.array([single_wall_grid[0].ravel() - 5*dr - dr/2.0,
+        x_walls = np.array([single_wall_grid[0].ravel() - 5*dr,
                             single_wall_grid[0].ravel() +
-                            self.width + dr/2.0]).flatten()
+                            self.width]).flatten()
 
         y_walls = np.array([single_wall_grid[1].ravel() + wall_start_left_y,
                             single_wall_grid[1].ravel() +
@@ -314,6 +314,7 @@ class particle_realization():
 real = particle_realization(1.0, 1.5, 0.02, target_density=0.6, sine_amp=0.25,
                             sine_freq=3.1415,number_of_peridigm_nodes_across_particle_diameter=4)
 real.print_peridigm_files()
+real.plot_peridigm_nodes()
 real.add_particle_output_to_xml('./Perturbation_textfile.xml', freq=100)
 
 #real.print_lammps_datafile()
