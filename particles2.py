@@ -3,6 +3,8 @@
 import numpy as np
 import scipy.integrate
 import matplotlib.pyplot as plt
+from lxml import etree
+import os.path
 
 
 class particle_realization():
@@ -264,11 +266,55 @@ class particle_realization():
         h.close()
         i.close()
 
+    def add_particle_output_to_xml(self, infile, freq=1, outfile=None, history_filename=None):
+
+        if history_filename == None:
+            history_basename = os.path.splitext(os.path.basename(infile))[0]
+        else:
+            history_basename = os.path.splitext(history_filename)[0]
+
+
+        input_deck = etree.parse(infile)
+        root = input_deck.getroot()
+
+        #Create sublist for compute class
+        compute_class = etree.SubElement(root, "ParameterList", name="Compute Class Parameters")
+
+        #Create sublist for history output
+        output2 = etree.SubElement(root, "ParameterList", name="Output2")
+        etree.SubElement(output2, "Parameter", name="Output File Type",  type="string", value="ExodusII")
+        etree.SubElement(output2, "Parameter", name="Output Format",  type="string",  value="BINARY")
+        etree.SubElement(output2, "Parameter", name="Output Filename",  type="string",  value=history_basename)
+        etree.SubElement(output2, "Parameter", name="Output Frequency",  type="int",  value=str(freq))
+        etree.SubElement(output2, "Parameter", name="Parallel Write",  type="bool",  value="true")
+        output_variables = etree.SubElement(output2, "ParameterList", name="Output Variables")
+        
+        count = 1
+        for node in zip(self.x, self.y):
+            velocity_tracker = etree.SubElement(compute_class, "ParameterList", name="Velocity of PD Node Nearest " + str(count))
+            etree.SubElement(velocity_tracker, "Parameter", name="Compute Class", type="string", value="Nearest_Point_Data")
+            etree.SubElement(velocity_tracker, "Parameter", name="X", type="double", value=str(node[0]))
+            etree.SubElement(velocity_tracker, "Parameter", name="Y", type="double", value=str(node[1]))
+            etree.SubElement(velocity_tracker, "Parameter", name="Z", type="double", value="0.0")
+            etree.SubElement(velocity_tracker, "Parameter", name="Variable", type="string", value="Velocity")
+            output_name = "Velocity_Particle_" + str(count)
+            etree.SubElement(velocity_tracker, "Parameter", name="Output Label", type="string", value=output_name)
+            etree.SubElement(output_variables, "Parameter", name=output_name, type="bool", value="true")
+            count += 1
+
+        #Write output to file
+        if outfile == None:
+            outname = os.path.splitext(os.path.basename(infile))[0] + "_full.xml"
+        else:
+            outname = outfile
+        
+        with open(outname, 'w') as f:
+            input_deck.write(f, pretty_print=True)
 
 real = particle_realization(1.0, 1.5, 0.02, target_density=0.6, sine_amp=0.25,
                             sine_freq=3.1415,number_of_peridigm_nodes_across_particle_diameter=4)
 real.print_peridigm_files()
-real.plot_peridigm_nodes()
+real.add_particle_output_to_xml('./Perturbation_textfile.xml', freq=100)
 
 #real.print_lammps_datafile()
 #real.plot_lammps_particles()
