@@ -209,9 +209,9 @@ class particle_realization():
                               -self.width + dr/2.0 +
                               np.arcsin(1.0)) + self.sin_amp)
 
-        x_walls = np.array([single_wall_grid[0].ravel() - 5*dr,
+        x_walls = np.array([single_wall_grid[0].ravel() - 5*dr - dr/4.0,
                             single_wall_grid[0].ravel() +
-                            self.width]).flatten()
+                            self.width + dr/4.0]).flatten()
 
         y_walls = np.array([single_wall_grid[1].ravel() + wall_start_left_y,
                             single_wall_grid[1].ravel() +
