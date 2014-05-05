@@ -266,6 +266,21 @@ class particle_realization():
         h.close()
         i.close()
 
+    def __add_new_compute_class_for_all_particles(self, compute_class_element, output_element, _type="Velocity"):
+
+        count = 1
+        for node in zip(self.x, self.y):
+            velocity_tracker = etree.SubElement(compute_class_element, "ParameterList", name=_type + " of PD Node Nearest " + str(count))
+            etree.SubElement(velocity_tracker, "Parameter", name="Compute Class", type="string", value="Nearest_Point_Data")
+            etree.SubElement(velocity_tracker, "Parameter", name="X", type="double", value=str(node[0]))
+            etree.SubElement(velocity_tracker, "Parameter", name="Y", type="double", value=str(node[1]))
+            etree.SubElement(velocity_tracker, "Parameter", name="Z", type="double", value="0.0")
+            etree.SubElement(velocity_tracker, "Parameter", name="Variable", type="string", value=_type)
+            output_name = _type + "_Particle_" + str(count)
+            etree.SubElement(velocity_tracker, "Parameter", name="Output Label", type="string", value=output_name)
+            etree.SubElement(output_element, "Parameter", name=output_name, type="bool", value="true")
+            count += 1
+
     def add_particle_output_to_xml(self, infile, freq=1, outfile=None, history_filename=None):
 
         if history_filename == None:
@@ -288,19 +303,11 @@ class particle_realization():
         etree.SubElement(output2, "Parameter", name="Output Frequency",  type="int",  value=str(freq))
         etree.SubElement(output2, "Parameter", name="Parallel Write",  type="bool",  value="true")
         output_variables = etree.SubElement(output2, "ParameterList", name="Output Variables")
+
+        self.__add_new_compute_class_for_all_particles(compute_class, output_variables, _type="Velocity")
+        self.__add_new_compute_class_for_all_particles(compute_class, output_variables, _type="Displacement")
+        self.__add_new_compute_class_for_all_particles(compute_class, output_variables, _type="Model_Coordinates")
         
-        count = 1
-        for node in zip(self.x, self.y):
-            velocity_tracker = etree.SubElement(compute_class, "ParameterList", name="Velocity of PD Node Nearest " + str(count))
-            etree.SubElement(velocity_tracker, "Parameter", name="Compute Class", type="string", value="Nearest_Point_Data")
-            etree.SubElement(velocity_tracker, "Parameter", name="X", type="double", value=str(node[0]))
-            etree.SubElement(velocity_tracker, "Parameter", name="Y", type="double", value=str(node[1]))
-            etree.SubElement(velocity_tracker, "Parameter", name="Z", type="double", value="0.0")
-            etree.SubElement(velocity_tracker, "Parameter", name="Variable", type="string", value="Velocity")
-            output_name = "Velocity_Particle_" + str(count)
-            etree.SubElement(velocity_tracker, "Parameter", name="Output Label", type="string", value=output_name)
-            etree.SubElement(output_variables, "Parameter", name=output_name, type="bool", value="true")
-            count += 1
 
         #Write output to file
         if outfile == None:
